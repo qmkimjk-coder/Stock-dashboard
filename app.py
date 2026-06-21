@@ -1,13 +1,13 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 
+from util.data_loader import load_yf_data
+from util.analyzer import analyze_df
+
 st.set_page_config(page_title="주식 투자 대시보드", layout="wide")
 st.title("📈 주식 투자 대시보드")
-
-RSI_PERIOD = 14
-SIGNAL_PERIOD = 6
+st.caption("※ 현재 데이터는 yfinance 기준입니다. 한국투자앱/KRX+NXT 기준과 차이가 날 수 있습니다.")
 
 KOSPI_SCAN_LIST = {
     "삼성전자": "005930.KS",
@@ -75,124 +75,6 @@ WATCHLIST = {
 }
 
 
-def calc_rsi(close, period=14):
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-
-def judge_signal(close, ma20, ma60, rsi, signal, volume, avg_volume):
-    if rsi > signal and close > ma20 and ma20 > ma60 and volume > avg_volume:
-        return "🟢 강매수"
-    elif rsi > signal and close > ma20:
-        return "🟡 매수관심"
-    elif rsi < signal and close < ma20 and ma20 < ma60:
-        return "⚫ 하락추세"
-    elif rsi < signal and close < ma20:
-        return "🔴 약세전환"
-    else:
-        return "🟠 관망"
-
-
-def score_stock(close, ma20, ma60, rsi, signal, volume, avg_volume, recent_buy):
-    score = 0
-    if close > ma20:
-        score += 20
-    if ma20 > ma60:
-        score += 20
-    if rsi > signal:
-        score += 20
-    if volume > avg_volume:
-        score += 20
-    if recent_buy:
-        score += 20
-    return score
-
-
-def analyze_df(df):
-    close = df["Close"]
-    volume = df["Volume"]
-
-    ma20 = close.rolling(20).mean()
-    ma60 = close.rolling(60).mean()
-    avg_volume = volume.rolling(20).mean()
-
-    rsi = calc_rsi(close, RSI_PERIOD)
-    signal = rsi.rolling(SIGNAL_PERIOD).mean()
-
-    buy_signal = (rsi.shift(1) < signal.shift(1)) & (rsi >= signal)
-    sell_signal = (rsi.shift(1) > signal.shift(1)) & (rsi <= signal)
-
-    buy_dates = close[buy_signal].index
-    sell_dates = close[sell_signal].index
-
-    latest_buy = buy_dates[-1].strftime("%Y-%m-%d") if len(buy_dates) > 0 else "-"
-    latest_sell = sell_dates[-1].strftime("%Y-%m-%d") if len(sell_dates) > 0 else "-"
-
-    recent_buy = False
-    if len(buy_dates) > 0:
-        recent_buy = (close.index[-1] - buy_dates[-1]).days <= 10
-
-    latest = {
-        "close": close.iloc[-1],
-        "ma20": ma20.iloc[-1],
-        "ma60": ma60.iloc[-1],
-        "rsi": rsi.iloc[-1],
-        "signal": signal.iloc[-1],
-        "volume": volume.iloc[-1],
-        "avg_volume": avg_volume.iloc[-1],
-        "latest_buy": latest_buy,
-        "latest_sell": latest_sell,
-        "recent_buy": recent_buy,
-    }
-
-    latest["final"] = judge_signal(
-        latest["close"],
-        latest["ma20"],
-        latest["ma60"],
-        latest["rsi"],
-        latest["signal"],
-        latest["volume"],
-        latest["avg_volume"],
-    )
-
-    latest["score"] = score_stock(
-        latest["close"],
-        latest["ma20"],
-        latest["ma60"],
-        latest["rsi"],
-        latest["signal"],
-        latest["volume"],
-        latest["avg_volume"],
-        latest["recent_buy"],
-    )
-
-    return close, volume, ma20, ma60, rsi, signal, buy_signal, sell_signal, latest
-
-
-@st.cache_data(ttl=60 * 60)
-def load_yf_data(ticker, period="1y"):
-    df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
-
-    if df.empty:
-        return pd.DataFrame()
-
-    close = df["Close"]
-    volume = df["Volume"]
-
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-
-    if isinstance(volume, pd.DataFrame):
-        volume = volume.iloc[:, 0]
-
-    return pd.DataFrame({"Close": close, "Volume": volume}).dropna()
-
-
 def scan_market():
     rows = []
 
@@ -234,7 +116,7 @@ def scan_market():
 tab1, tab2, tab3 = st.tabs(["📈 종목 분석", "🔎 매수 후보 스캐너", "🏆 강매수 TOP5"])
 
 with tab2:
-    st.subheader("🔎 43개 종목 매수 후보 스캐너")
+    st.subheader("🔎 매수 후보 스캐너")
     st.caption("조건: RSI(14) > Signal(6), 현재가 > 20일선 기준으로 매수 후보만 표시합니다.")
 
     if st.button("매수 후보 검색"):
@@ -247,7 +129,7 @@ with tab2:
 
 with tab3:
     st.subheader("🏆 강매수 TOP5")
-    st.caption("43개 종목 중 점수가 높은 상위 5개 종목입니다.")
+    st.caption("스캔 종목 중 점수가 높은 상위 5개 종목입니다.")
 
     if st.button("TOP5 검색"):
         top_df = scan_market()
