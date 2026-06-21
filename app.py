@@ -75,6 +75,15 @@ WATCHLIST = {
 }
 
 
+def to_weekly(df):
+    weekly_df = df.resample("W-FRI").agg({
+        "Close": "last",
+        "Volume": "sum"
+    }).dropna()
+
+    return weekly_df
+
+
 def scan_market():
     rows = []
 
@@ -113,11 +122,57 @@ def scan_market():
     return result.sort_values(by=["점수", "RSI"], ascending=[False, False])
 
 
-tab1, tab2, tab3 = st.tabs(["📈 종목 분석", "🔎 매수 후보 스캐너", "🏆 강매수 TOP5"])
+def scan_weekly_rsi30():
+    rows = []
+
+    for name, ticker in SCAN_LIST.items():
+        try:
+            df = load_yf_data(ticker, "5y")
+
+            if len(df) < 300:
+                continue
+
+            weekly_df = to_weekly(df)
+
+            if len(weekly_df) < 120:
+                continue
+
+            _, _, _, _, _, _, _, _, latest = analyze_df(weekly_df)
+
+            if 25 <= latest["rsi"] <= 35:
+                rows.append({
+                    "종목": name,
+                    "현재가": round(latest["close"], 2),
+                    "주봉 RSI": round(latest["rsi"], 2),
+                    "주봉 Signal": round(latest["signal"], 2),
+                    "최근 주봉 매수": latest["latest_buy"],
+                    "최근 주봉 매도": latest["latest_sell"],
+                    "판정": latest["final"],
+                    "점수": latest["score"],
+                })
+
+        except Exception:
+            pass
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(rows).sort_values(
+        by="주봉 RSI",
+        ascending=True
+    )
+
+
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📈 종목 분석",
+    "🔎 매수 후보 스캐너",
+    "🏆 강매수 TOP5",
+    "📉 주봉 RSI30"
+])
 
 with tab2:
     st.subheader("🔎 매수 후보 스캐너")
-    st.caption("조건: RSI(14) > Signal(6), 현재가 > 20일선 기준으로 매수 후보만 표시합니다.")
+    st.caption("조건: 일봉 RSI(14) > Signal(6), 현재가 > 20일선 기준으로 매수 후보만 표시합니다.")
 
     if st.button("매수 후보 검색"):
         buy_df = scan_market()
@@ -138,6 +193,18 @@ with tab3:
             st.warning("현재 TOP5 후보가 없습니다.")
         else:
             st.dataframe(top_df.head(5), use_container_width=True)
+
+with tab4:
+    st.subheader("📉 주봉 RSI 25~35 종목")
+    st.caption("조건: 주봉 RSI(14)가 25~35 구간에 있는 종목을 검색합니다.")
+
+    if st.button("주봉 RSI30 검색"):
+        weekly_rsi_df = scan_weekly_rsi30()
+
+        if weekly_rsi_df.empty:
+            st.warning("현재 주봉 RSI 30 부근 종목이 없습니다.")
+        else:
+            st.dataframe(weekly_rsi_df, use_container_width=True)
 
 with tab1:
     st.subheader("📋 관심종목 현황판")
