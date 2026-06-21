@@ -39,9 +39,20 @@ else:
     latest_close = close.dropna().iloc[-1]
     latest_rsi = rsi.dropna().iloc[-1]
 
-    col1, col2 = st.columns(2)
+    buy_signal = (rsi.shift(1) < 30) & (rsi >= 30)
+    sell_signal = (rsi.shift(1) > 70) & (rsi <= 70)
+
+    if latest_rsi >= 70:
+        rsi_status = "과매수 구간"
+    elif latest_rsi <= 30:
+        rsi_status = "과매도 구간"
+    else:
+        rsi_status = "중립 구간"
+
+    col1, col2, col3 = st.columns(3)
     col1.metric("최근 종가", f"{latest_close:,.0f} 원")
     col2.metric("현재 RSI(14)", f"{latest_rsi:.2f}")
+    col3.metric("RSI 상태", rsi_status)
 
     st.subheader(f"{name} 종가 차트")
 
@@ -53,12 +64,30 @@ else:
         name="종가",
         line=dict(width=3)
     ))
+
+    fig_price.add_trace(go.Scatter(
+        x=close[buy_signal].index,
+        y=close[buy_signal],
+        mode="markers",
+        name="RSI 매수 신호",
+        marker=dict(symbol="triangle-up", size=14)
+    ))
+
+    fig_price.add_trace(go.Scatter(
+        x=close[sell_signal].index,
+        y=close[sell_signal],
+        mode="markers",
+        name="RSI 매도 신호",
+        marker=dict(symbol="triangle-down", size=14)
+    ))
+
     fig_price.update_layout(
         height=450,
         xaxis_title="날짜",
         yaxis_title="가격",
         hovermode="x unified"
     )
+
     st.plotly_chart(fig_price, use_container_width=True)
 
     st.subheader("RSI(14)")
@@ -73,8 +102,24 @@ else:
     ))
 
     fig_rsi.add_hline(y=70, line_dash="dash", annotation_text="과매수 70")
-    fig_rsi.add_hline(y=30, line_dash="dash", annotation_text="과매도 30")
     fig_rsi.add_hline(y=50, line_dash="dot", annotation_text="중립 50")
+    fig_rsi.add_hline(y=30, line_dash="dash", annotation_text="과매도 30")
+
+    fig_rsi.add_trace(go.Scatter(
+        x=rsi[buy_signal].index,
+        y=rsi[buy_signal],
+        mode="markers",
+        name="매수 신호",
+        marker=dict(symbol="triangle-up", size=14)
+    ))
+
+    fig_rsi.add_trace(go.Scatter(
+        x=rsi[sell_signal].index,
+        y=rsi[sell_signal],
+        mode="markers",
+        name="매도 신호",
+        marker=dict(symbol="triangle-down", size=14)
+    ))
 
     fig_rsi.update_layout(
         height=400,
@@ -83,4 +128,7 @@ else:
         yaxis=dict(range=[0, 100]),
         hovermode="x unified"
     )
+
     st.plotly_chart(fig_rsi, use_container_width=True)
+
+    st.info("매수 신호: RSI가 30선을 아래에서 위로 돌파 / 매도 신호: RSI가 70선을 위에서 아래로 돌파")
